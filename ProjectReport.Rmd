@@ -1,0 +1,442 @@
+---
+title: "Distance Between EV Charging Stations"
+author: "Torin Rose"
+date: "2023-05-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Outline
+
+The goal of this case study is to calculate the average distance between public charging stations for electric vehicles (EVs) within the United States, grouped by state and year.
+
+## Loading our library and data and displaying the structure of the raw data
+
+```{r Library and Data}
+library(tidyverse)
+library(lubridate)
+library(compiler)
+library(corrgram)
+library(ggtext)
+
+df <- read.csv('D:/GoogleDataAnalyticsCertificate/8.CapstoneProject/ev_fuel_stations_5.18.2023.csv')
+
+str(df)
+```
+
+Because of the criteria I used when I downloaded the data set from <https://developer.nrel.gov/docs/transportation/alt-fuel-stations-v1/all/>, many of these columns are empty. The full data set includes many different forms of alternative fuel stations, however I filtered for only electric charging stations in the United States. I also opted to download a static data set to work with instead of utilizing the API of the website. This was more for my own peace of mind, as this is a beginner project for me and I wanted to simplify where I saw fit.
+
+## Narrowing down our variables to accomplish our goal
+
+Since we're only concerned with location of these EV charging stations and when they became operational, we'll create a new data frame containing only the geographical data and the date they were opened. I used broad strokes for state grouping with the State column and will use the Latitude and Longitude columns to calculate distances. From there, I also picked (and converted to Dates) the Open Date column to know when the charging station became available for use and the Date Last Confirmed column to filter out stations that are potentially out of use. Also filtered out stations that are planned to be operational in the future using the Expected Date column (and had to include is.na() for the many rows that the Expected Date column is empty).
+
+```{r Creating a Useful Dataframe}
+charging_stations_df <- df %>% 
+  filter(ymd(Expected.Date)<=today() | is.na(ymd(Expected.Date))) %>% 
+  select(State, Latitude, Longitude, Date.Last.Confirmed, Open.Date) %>%
+  mutate(Date.Last.Confirmed = ymd(Date.Last.Confirmed), Open.Date = ymd(Open.Date))
+
+str(charging_stations_df)
+```
+
+### Cleaning the data
+
+Now lets check if all our rows are complete and useful:
+
+```{r Data Cleaning 1}
+charging_stations_df %>% 
+  filter(State == "" | is.na(Date.Last.Confirmed) | is.na(Open.Date))
+```
+
+Looks like we'll need to drop some rows with incomplete observations, first changing the empty states to NA so they're included in our drop. We'll do the same for Puerto Rico (state code PR) and a few data points that were included from India and Canada for some reason (state code KA, ON, respectively). There is probably a more elegant way to write this code, but it is quick and easy.
+
+```{r Data Cleaning 2}
+start_difference <- nrow(charging_stations_df)
+
+charging_stations_df <- charging_stations_df %>% 
+  mutate(State = na_if(State, "")) %>% 
+  mutate(State = na_if(State, "PR")) %>% 
+  mutate(State = na_if(State, "ON")) %>% 
+  mutate(State = na_if(State, "KA")) %>% 
+  drop_na()
+
+end_difference <- nrow(charging_stations_df)
+difference <- as.character(start_difference - end_difference)
+print(paste("Stations removed: ", difference, sep=""))
+print(paste("Oldest station confirmation: ", min(year(charging_stations_df$Date.Last.Confirmed))))
+
+# Found a station in the TX set that belongs in MS
+row_to_change <- charging_stations_df %>% 
+  filter(Date.Last.Confirmed==ymd(20230517) & Open.Date==ymd(20221215) & State=="TX" & Latitude>34)
+
+row_to_change$State = "MS"
+charging_stations_df <- rows_update(charging_stations_df, row_to_change, by="Latitude")
+```
+
+Since the data represents a current snapshot of the stations in operation, there is not much insight into the timeline of stations needing to be repaired/out of commission. With this in mind, and the farthest back a station was confirmed only being four years ago, we will treat each station we have data on as open and available to the public.
+
+## Our distance formula
+
+To calculate the distance between our charging stations, we'll be using a version of the Haversine formula, which utilizes trigonometry and the radius of a sphere to calculate the distance between two points on the surface of that sphere. The formula we're using was obtained from <http://powerappsguide.com/blog/post/formulas-calculate-the-distance-between-2-points-longitude-latitude> and assuming a constant radius of Earth of 3958.8 miles. However, since the radius of our planet is not constant and we are assuming that we are travelling "as the crow flies", the distances calculated will only be an approximation. That being said, this case study is more concerned with general distance between stations and less about the actual road route that is taken.
+
+```{r Defining our Distance Function}
+distance <- function(latA, longA, latB, longB){
+  radius <- 3958.8
+  pi_radians <- pi/180
+  
+  (2 * radius) * asin(sqrt(0.5 - cos((latA - latB) * pi_radians)/2 + cos(latB * pi_radians) * cos(latA * pi_radians) * (1 - cos((longA - longB) * pi_radians))/2))
+}
+
+distance_compiled <- cmpfun(distance)
+```
+
+## Analysis
+
+Now we can begin the analysis of our data. First, we'll separate our stations by state, and then year. Then, going station by station, we'll calculate the distance to every other station in that state (for the time being disregarding stations that are geographically near but across state lines). This will give us a state average for the distance between stations by year. We're interested in how this number changes over time, and will later compare it to the average range of EV's for that model year, inclusive of previous model years.
+
+```{r Analysis 1}
+state_abbr <- unique(charging_stations_df$State)
+states_test <- c("ID")
+for(states in states_test){
+  dummy_df_name <- paste(states, "_analysis", sep="")
+  station_by_state_and_year <- matrix(nrow=0, ncol=5)
+  colnames(station_by_state_and_year) <- c("year","total_num_of_stations","new_stations_added","average_distance_mi","maximum_distance_mi")
+  station_by_state <- charging_stations_df %>% 
+    filter(State == states)
+  distances <- c()
+  year_range <- (min(year(station_by_state$Open.Date)):2023)
+  for(i_year in year_range){
+    # Used to assign the distance vector each year to a separate variable for analysis
+    dummy_year <- paste(states, "_", i_year, "_distances", sep="")
+    
+    station_count <- station_by_state %>% 
+      filter(year(Open.Date)<=i_year) %>% 
+      nrow()
+    
+    # Skipping iteration if there is only one station available
+    if(station_count==1 & nrow(station_by_state_and_year)==0){
+      station_by_state_and_year <- rbind(station_by_state_and_year, c(as.double(i_year), as.double(station_count), as.double(1), NA, NA))
+      assign(dummy_year, distances)
+    } else if(station_count==1){
+      station_by_state_and_year <- rbind(station_by_state_and_year, c(as.double(i_year), as.double(station_count), as.double(0), NA, NA))
+      assign(dummy_year, distances)
+    } else {
+      old_stations <- station_by_state %>% 
+        filter(year(Open.Date)<i_year)
+      old_count <- nrow(old_stations)
+      
+      new_stations <- station_by_state %>% 
+        filter(year(Open.Date)==i_year)
+      new_count <- nrow(new_stations)
+      
+      # Implementing our distance function by year, by station
+      
+      # If only one new station, skip the calculation loop within the new station data frame
+      # Else (if) there are both old and new stations, calculate distances between all old stations and
+      # all new stations as well as the distances between all new stations within the new station data frame.
+      if(new_count==1){
+        for(start_row in (1:old_count)){
+            distances <- c(distances, distance_compiled(old_stations[start_row, "Latitude"], old_stations[start_row, "Longitude"], new_stations[1, "Latitude"], new_stations[1, "Longitude"]))
+        }
+      } else if(new_count>1){
+        start_range <- (1:new_count-1)
+        for(start_row in (start_range)){
+          calc_range <- ((start_row+1):new_count)
+          for(calc_row in (calc_range)){
+            distances <- c(distances, distance_compiled(new_stations[start_row, "Latitude"], new_stations[start_row, "Longitude"], new_stations[calc_row, "Latitude"], new_stations[calc_row, "Longitude"]))
+          }
+        }
+        # Accounting for multiple stations being added on the first year, thus having an old_count of zero
+         if(old_count>0){ 
+          for(start_row in (1:old_count)){
+            for(calc_row in (1:new_count)){
+              distances <- c(distances, distance_compiled(old_stations[start_row, "Latitude"], old_stations[start_row, "Longitude"], new_stations[calc_row, "Latitude"], new_stations[calc_row, "Longitude"]))
+            }
+          }
+        }
+      }
+      
+      station_by_state_and_year <- rbind(station_by_state_and_year, c(as.double(i_year), as.double(station_count), as.double(nrow(new_stations)), mean(distances), max(distances)))
+      assign(dummy_year, distances)
+    }
+  }
+  
+  assign(dummy_df_name, station_by_state_and_year)
+}
+
+
+```
+
+### Analysis Sidenote
+
+This code has gone through a couple iterations to land here. I quickly found that, due to the sheer number of distance calculations required (both to compute and store) for states with a large number of stations (through trial and error and manually checking, I found this number to be a function of the total number of stations, N: $\sum_{i=1}^{N-1} i$) coupled with the `mean` calculation to be done on a vector of that size, this code took a very long time to run. As in I left my computer on for two days for California and only made it to 2021. I had to hard stop the running of it multiple times, rework the code, optimize as much as I could, and attempt to run it again. This led me to run this code chunk per state (set to "ID" for reproducibility) as opposed to iterating over the list of all states. At this point, I considered just making this chunk its own function and compiling that function to see if it improves performance, but have yet to implement this change, partly due to losing quite a bit of steam with all the tinkering. Regardless, until I come up with a better way to do this or upgrade my computing power, I am limited to results for states with a total station count of less than 1500, which is rather unfortunate.
+
+For now, I only have the computation done for IA, ID, VT, and WA, which was the state that gave me a more realized upper limit. WA has a total of 1935 stations, which translates to 1,871,145 unique distance calculations across a 16 year range, with `mean` and `max` calculations done for each year. This alone took somewhere around 3-4 hours. I plan to perform more runs on the states with lower station counts to get as many sets of results as I can, but I am most interested in including the entire United States, so I am publishing this document in the current state in the hope of getting feedback and any help that can be offered!
+
+### Large sets:
+
+-   Texas -- 2817 stations, 3966336 calculations. *Completed 2023.06.04*
+-   Colorado -- 1919 stations, 1840321 calculations. *Completed 2023.06.05*
+-   Florida -- 3077 stations, 4732426 calculations. *Completed 2023.06.06*
+-   Georgia -- 1750 stations, 1530375 calculations. *Completed 2023.06.05*
+-   Massachusetts -- 2659 stations, 3533811 calculations.
+-   New York -- 3708 stations, 6872778 calculations.
+-   California -- **15528** stations, **120551628** calculations.
+
+## Continuing with smaller sets
+
+```{r Analysis 2: Moving Forward}
+
+upper_limit_states_df <- charging_stations_df %>% 
+  group_by(State) %>% 
+  summarize(count = n()) %>% 
+  filter(count<=1500)
+
+upper_limit_states <- unique(upper_limit_states_df$State)
+
+for(states in upper_limit_states){
+  dummy_df_name <- paste(states, "_analysis", sep="")
+  station_by_state_and_year <- matrix(nrow=0, ncol=5)
+  colnames(station_by_state_and_year) <- c("year","total_num_of_stations","new_stations_added","average_distance_mi","maximum_distance_mi")
+  station_by_state <- charging_stations_df %>% 
+    filter(State == states)
+  distances <- c()
+  year_range <- (min(year(station_by_state$Open.Date)):2023)
+  for(i_year in year_range){
+    station_count <- station_by_state %>% 
+      filter(year(Open.Date)<=i_year) %>% 
+      nrow()
+    
+    # Skipping iteration if there is only one station available
+    if(station_count==1 & nrow(station_by_state_and_year)==0){
+      station_by_state_and_year <- rbind(station_by_state_and_year, c(as.double(i_year), as.double(station_count), as.double(1), NA, NA))
+    } else if(station_count==1){
+      station_by_state_and_year <- rbind(station_by_state_and_year, c(as.double(i_year), as.double(station_count), as.double(0), NA, NA))
+    } else {
+      old_stations <- station_by_state %>% 
+        filter(year(Open.Date)<i_year)
+      old_count <- nrow(old_stations)
+      
+      new_stations <- station_by_state %>% 
+        filter(year(Open.Date)==i_year)
+      new_count <- nrow(new_stations)
+      
+      # Implementing our distance function by year, by station
+      
+      # If only one new station, skip the calculation loop within the new station data frame
+      # Else (if) there are both old and new stations, calculate distances between all old stations and
+      # all new stations as well as the distances between all new stations within the new station data frame.
+      if(new_count==1){
+        for(start_row in (1:old_count)){
+            distances <- c(distances, distance_compiled(old_stations[start_row, "Latitude"], old_stations[start_row, "Longitude"], new_stations[1, "Latitude"], new_stations[1, "Longitude"]))
+        }
+      } else if(new_count>1){
+        start_range <- (1:new_count-1)
+        for(start_row in (start_range)){
+          calc_range <- ((start_row+1):new_count)
+          for(calc_row in (calc_range)){
+            distances <- c(distances, distance_compiled(new_stations[start_row, "Latitude"], new_stations[start_row, "Longitude"], new_stations[calc_row, "Latitude"], new_stations[calc_row, "Longitude"]))
+          }
+        }
+        # Accounting for multiple stations being added on the first year, thus having an old_count of zero
+         if(old_count>0){ 
+          for(start_row in (1:old_count)){
+            for(calc_row in (1:new_count)){
+              distances <- c(distances, distance_compiled(old_stations[start_row, "Latitude"], old_stations[start_row, "Longitude"], new_stations[calc_row, "Latitude"], new_stations[calc_row, "Longitude"]))
+            }
+          }
+        }
+      }
+      
+      station_by_state_and_year <- rbind(station_by_state_and_year, c(as.double(i_year), as.double(station_count), as.double(nrow(new_stations)), mean(distances), max(distances)))
+    }
+  }
+  
+  assign(dummy_df_name, station_by_state_and_year)
+}
+
+```
+
+# Picking a State and Sticking With It
+
+For this next step in the analysis, I have decided to narrow my focus to Texas. I will now include the number of electric vehicle registrations in that state (obtained from <https://afdc.energy.gov/vehicle-registration>) for the years 2016-2021 to see if there is any correlation between total number of EV registrations, total number of EV charging stations, increase in registrations, or increase in stations.
+
+```{r TX Focus}
+TX_analysis <- as.data.frame(read_csv("D:\\GoogleDataAnalyticsCertificate\\8.CapstoneProject\\by_state_analysis\\texas_focus\\TX_analysis.csv"))
+
+all_registrations <- as.data.frame(read_csv("D:\\GoogleDataAnalyticsCertificate\\8.CapstoneProject\\EV_Registrations_by_State_2016-2021.csv"))
+
+TX_registrations <- all_registrations %>% 
+  filter(State == "Texas") %>% 
+  select("State", "Year", "Electric")
+
+new_vehicles <- integer()
+percent_change_registrations <- double()
+percent_change_stations <- double()
+percent_change_distance <- double()
+
+
+for(i in (2:nrow(TX_registrations))){
+  new_vehicles <- c(new_vehicles, (TX_registrations[i, "Electric"] - TX_registrations[(i-1), "Electric"]))
+  dummy <- round(TX_registrations[i, "Electric"]/TX_registrations[(i-1), "Electric"], 4)
+  percent_change_registrations <- c(percent_change_registrations, (dummy-1)*100)
+}
+
+# Adding empty first row to conserve dimensionality with registration list, then adding the column
+new_vehicles <- c(NA, new_vehicles)
+percent_change_registrations <- c(NA, percent_change_registrations)
+
+TX_registrations <- TX_registrations %>% 
+  mutate(New_Vehicles = new_vehicles, registrations_percent_change = percent_change_registrations)
+
+TX_analysis_with_registrations <- left_join(TX_registrations, TX_analysis, by=join_by(Year==year))
+
+for(i in (2:nrow(TX_analysis_with_registrations))){
+  dummy1 <- round(TX_analysis_with_registrations[i, "total_num_of_stations"]/TX_analysis_with_registrations[(i-1), "total_num_of_stations"], 4)
+  dummy2 <- round(TX_analysis_with_registrations[i, "average_distance_mi"]/TX_analysis_with_registrations[(i-1), "average_distance_mi"], 4)
+  
+  percent_change_stations <- c(percent_change_stations, (dummy1-1)*100)
+  percent_change_distance <- c(percent_change_distance, (dummy2-1)*100)
+}
+
+percent_change_stations <- c(NA, percent_change_stations)
+percent_change_distance <- c(NA, percent_change_distance)
+
+TX_analysis_with_registrations <- TX_analysis_with_registrations %>% 
+  mutate(stations_percent_change = percent_change_stations, distance_percent_change = percent_change_distance)
+```
+
+```{r Plots 1}
+percentage_line_plot <- ggplot(data=TX_analysis_with_registrations) + 
+  geom_line(mapping=aes(x=Year, y=registrations_percent_change), color="skyblue", linewidth=1.5) +
+  geom_line(mapping=aes(x=Year, y=stations_percent_change), color="yellow", linewidth=1.5) +
+  geom_line(mapping=aes(x=Year, y=distance_percent_change), color="pink", linewidth=1.5) +
+  geom_hline(mapping=aes(yintercept=0), color="black") +
+  labs(y="Percent Change") +
+  annotate(geom="richtext",x=2016.5,y=31.5,label="<b>Charging stations</b>", color="goldenrod") +
+  annotate(geom="richtext",x=2016.5,y=36,label="<b>EV registrations</b>", color="darkblue") +
+  annotate(geom="richtext",x=2016.5,y=5.5,label="<b>Average distance</b><br><b>between stations</b>", color="darkred")
+percentage_line_plot
+
+correlation_data <- TX_analysis_with_registrations %>% 
+  select(!c("State","registrations_percent_change","stations_percent_change","distance_percent_change"))
+
+correlation_data[1,2]=0
+correlation_data$Year <- as.double(correlation_data$Year)
+correlation_data <- as.matrix(correlation_data)
+
+correlation_plot <- corrgram(correlation_data, lower.panel=panel.pts, upper.panel=panel.cor)
+```
+
+
+```{r Plots 2}
+TX_analysis_with_registrations$Year <- factor(TX_analysis_with_registrations$Year)
+
+column_data <- TX_analysis_with_registrations %>% 
+  select("Year","registrations_percent_change","stations_percent_change","distance_percent_change")
+
+column_data_long <- gather(column_data, key="metric", value="percentage", registrations_percent_change:distance_percent_change, factor_key=TRUE)
+
+percentage_column_plot <- ggplot(data=column_data_long) + 
+  geom_col(mapping=aes(x=Year, y=percentage, group=metric, fill=metric), position="dodge") +
+  labs(y="Percent Change") +
+  geom_hline(mapping=aes(yintercept=0), color="black")
+percentage_column_plot
+
+stations_vs_distance_scatter <- ggplot(data=TX_analysis_with_registrations) +
+  geom_point(mapping=aes(x=total_num_of_stations, y=average_distance_mi, color=Year, size=2))
+stations_vs_distance_scatter
+
+stations_vs_registrations_scatter <- ggplot(data=TX_analysis_with_registrations) +
+  geom_point(mapping=aes(x=total_num_of_stations, y=Electric, color=Year, size=2))
+stations_vs_registrations_scatter
+
+distance_vs_registrations_scatter <- ggplot(data=TX_analysis_with_registrations) +
+  geom_point(mapping=aes(x=Electric, y=average_distance_mi, color=Year, size=2))
+distance_vs_registrations_scatter
+```
+
+
+
+```{r Plots 3}
+percent_change_total_stations <- double()
+percent_change_new_stations <- double()
+percent_change_distance <- double()
+
+for(i in (2:nrow(TX_analysis))){
+  dummy1 <- round(TX_analysis[i, "total_num_of_stations"]/TX_analysis[(i-1), "total_num_of_stations"], 4)
+  dummy2 <- round(TX_analysis[i, "new_stations_added"]/TX_analysis[(i-1), "new_stations_added"], 4)
+  dummy3 <- round(TX_analysis[i, "average_distance_mi"]/TX_analysis[(i-1), "average_distance_mi"], 4)
+  
+  percent_change_total_stations <- c(percent_change_total_stations, (dummy1-1)*100)
+  percent_change_new_stations <- c(percent_change_new_stations, (dummy2-1)*100)
+  percent_change_distance <- c(percent_change_distance, (dummy3-1)*100)
+}
+
+percent_change_total_stations <- c(NA, percent_change_total_stations)
+percent_change_new_stations <- c(NA, percent_change_new_stations)
+percent_change_distance <- c(NA, percent_change_distance)
+
+TX_analysis <- TX_analysis %>% 
+  mutate(total_stations_percent_change=percent_change_total_stations, new_stations_percent_change=percent_change_new_stations, average_distance_percent_change=percent_change_distance)
+
+distance_corrgram <- corrgram(select(TX_analysis, "year":"maximum_distance_mi"), lower.panel=panel.cor, upper.panel=panel.pts)
+
+avg_distance_vs_time <- ggplot(data=TX_analysis) +
+  geom_point(mapping=aes(x=year, y=average_distance_mi))
+avg_distance_vs_time
+
+total_stations_vs_time <- ggplot(data=TX_analysis) +
+  geom_point(mapping=aes(x=year, y=total_num_of_stations))
+total_stations_vs_time
+
+column_data <- TX_analysis %>% 
+  select("year", "total_stations_percent_change","average_distance_percent_change") %>% 
+  filter(year>2011)
+
+column_data$year <- factor(column_data$year)
+
+column_data_long <- gather(column_data, key="metric", value="percentage", total_stations_percent_change:average_distance_percent_change, factor_key=TRUE)
+
+distance_percentages_column <- ggplot(column_data_long) +
+  geom_col(mapping=aes(x=year, y=percentage, group=metric, fill=metric), position="dodge") +
+  labs(y="Percent Change") +
+  geom_hline(yintercept=0, color="black")
+distance_percentages_column
+```
+
+```{r Export to Tableau 1}
+# for(i_year in (2011:2023)){
+#   dummy_name <- paste("distances_", i_year, sep="")
+#   dummy_df <- read_csv(paste("D:\\GoogleDataAnalyticsCertificate\\8.CapstoneProject\\by_state_analysis\\texas_focus\\distances_", i_year, ".csv", sep=""))
+#   
+#   dummy_df <- dummy_df %>% 
+#     mutate(year=i_year) %>% 
+#     mutate(distance=get(paste("TX_",i_year,"_distances", sep=""))) %>% 
+#     select("year","distance") %>% 
+#     mutate(old_or_new=NA)
+#   
+#   if(i_year==2011){
+#     dummy_df <- dummy_df %>% 
+#       mutate(old_or_new="new")
+#     
+#     old_count=nrow(dummy_df)
+#   } else{
+#     for(i in (1:old_count)){
+#       dummy_df[i, "old_or_new"] = "old"
+#     }
+#     for(i in((old_count+1):nrow(dummy_df))){
+#       dummy_df[i, "old_or_new"] = "new"
+#     }
+#     old_count <- nrow(dummy_df)
+#   }
+#   
+#   assign(dummy_name, dummy_df)
+# }
+```
+
+The above code chunk was made to be able to differentiate between which distance calculations had been added by new stations per year. This was so when I transferred to Tableau, I could make a color coded histogram for distances. This took two days to compute! I was very surprised. I considered changing the `old_or_new` column to a boolean in the hopes that it would take less memory to store/update, but I was already a day into running the chunk and decided to just wait for my results. This code has been commented out so it won't run on upload to Github.
+
