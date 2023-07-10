@@ -1,5 +1,10 @@
 ---
 title: "Distance Between EV Charging Stations"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+    encoding=encoding,
+    output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
 author: "Torin Rose"
 date: "2023-05-18"
 output: html_document
@@ -174,7 +179,9 @@ for(states in states_test){
 
 This code has gone through a couple iterations to land here. I quickly found that, due to the sheer number of distance calculations required (both to compute and store) for states with a large number of stations (through trial and error and manually checking, I found this number to be a function of the total number of stations, N: $\sum_{i=1}^{N-1} i$) coupled with the `mean` calculation to be done on a vector of that size, this code took a very long time to run. As in I left my computer on for two days for California and only made it to 2021. I had to hard stop the running of it multiple times, rework the code, optimize as much as I could, and attempt to run it again. This led me to run this code chunk per state (set to "ID" for reproducibility) as opposed to iterating over the list of all states. At this point, I considered just making this chunk its own function and compiling that function to see if it improves performance, but have yet to implement this change, partly due to losing quite a bit of steam with all the tinkering. Regardless, until I come up with a better way to do this or upgrade my computing power, I am limited to results for states with a total station count of less than 1500, which is rather unfortunate.
 
-For now, I only have the computation done for IA, ID, VT, and WA, which was the state that gave me a more realized upper limit. WA has a total of 1935 stations, which translates to 1,871,145 unique distance calculations across a 16 year range, with `mean` and `max` calculations done for each year. This alone took somewhere around 3-4 hours. I plan to perform more runs on the states with lower station counts to get as many sets of results as I can, but I am most interested in including the entire United States, so I am publishing this document in the current state in the hope of getting feedback and any help that can be offered!
+~~For now, I only have the computation done for IA, ID, VT, and WA, which was the state that gave me a more realized upper limit. WA has a total of 1935 stations, which translates to 1,871,145 unique distance calculations across a 16 year range, with `mean` and `max` calculations done for each year. This alone took somewhere around 3-4 hours. I plan to perform more runs on the states with lower station counts to get as many sets of results as I can, but I am most interested in including the entire United States, so I am publishing this document in the current state in the hope of getting feedback and any help that can be offered!~~
+
+Currently, I have most individual state analysis' done, minus the few listed below without a complete date. For the time being, I am only focusing on Texas, and will perhaps revisit this project for other states in the future.
 
 ### Large sets:
 
@@ -188,6 +195,8 @@ For now, I only have the computation done for IA, ID, VT, and WA, which was the 
 
 ## Continuing with smaller sets
 
+When uploaded to Github, I set Texas as the only state to be ran through the algorithm for expedient rendering.
+
 ```{r Analysis 2: Moving Forward}
 
 upper_limit_states_df <- charging_stations_df %>% 
@@ -196,6 +205,8 @@ upper_limit_states_df <- charging_stations_df %>%
   filter(count<=1500)
 
 upper_limit_states <- unique(upper_limit_states_df$State)
+
+git_commit_states <- c("TX")
 
 for(states in upper_limit_states){
   dummy_df_name <- paste(states, "_analysis", sep="")
