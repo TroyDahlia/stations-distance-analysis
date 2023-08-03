@@ -195,79 +195,77 @@ Currently, I have most individual state analysis' done, minus the few listed bel
 
 ## Continuing with smaller sets
 
-When uploaded to Github, I set Texas as the only state to be ran through the algorithm for expedient rendering.
+When uploaded to Github, I commented this code out since it takes about 4 hours to run and I already have the calculations done and saved onto my local machine.
 
 ```{r Analysis 2: Moving Forward}
 
-upper_limit_states_df <- charging_stations_df %>% 
-  group_by(State) %>% 
-  summarize(count = n()) %>% 
-  filter(count<=1500)
-
-upper_limit_states <- unique(upper_limit_states_df$State)
-
-git_commit_states <- c("TX")
-
-for(states in upper_limit_states){
-  dummy_df_name <- paste(states, "_analysis", sep="")
-  station_by_state_and_year <- matrix(nrow=0, ncol=5)
-  colnames(station_by_state_and_year) <- c("year","total_num_of_stations","new_stations_added","average_distance_mi","maximum_distance_mi")
-  station_by_state <- charging_stations_df %>% 
-    filter(State == states)
-  distances <- c()
-  year_range <- (min(year(station_by_state$Open.Date)):2023)
-  for(i_year in year_range){
-    station_count <- station_by_state %>% 
-      filter(year(Open.Date)<=i_year) %>% 
-      nrow()
-    
-    # Skipping iteration if there is only one station available
-    if(station_count==1 & nrow(station_by_state_and_year)==0){
-      station_by_state_and_year <- rbind(station_by_state_and_year, c(as.double(i_year), as.double(station_count), as.double(1), NA, NA))
-    } else if(station_count==1){
-      station_by_state_and_year <- rbind(station_by_state_and_year, c(as.double(i_year), as.double(station_count), as.double(0), NA, NA))
-    } else {
-      old_stations <- station_by_state %>% 
-        filter(year(Open.Date)<i_year)
-      old_count <- nrow(old_stations)
-      
-      new_stations <- station_by_state %>% 
-        filter(year(Open.Date)==i_year)
-      new_count <- nrow(new_stations)
-      
-      # Implementing our distance function by year, by station
-      
-      # If only one new station, skip the calculation loop within the new station data frame
-      # Else (if) there are both old and new stations, calculate distances between all old stations and
-      # all new stations as well as the distances between all new stations within the new station data frame.
-      if(new_count==1){
-        for(start_row in (1:old_count)){
-            distances <- c(distances, distance_compiled(old_stations[start_row, "Latitude"], old_stations[start_row, "Longitude"], new_stations[1, "Latitude"], new_stations[1, "Longitude"]))
-        }
-      } else if(new_count>1){
-        start_range <- (1:new_count-1)
-        for(start_row in (start_range)){
-          calc_range <- ((start_row+1):new_count)
-          for(calc_row in (calc_range)){
-            distances <- c(distances, distance_compiled(new_stations[start_row, "Latitude"], new_stations[start_row, "Longitude"], new_stations[calc_row, "Latitude"], new_stations[calc_row, "Longitude"]))
-          }
-        }
-        # Accounting for multiple stations being added on the first year, thus having an old_count of zero
-         if(old_count>0){ 
-          for(start_row in (1:old_count)){
-            for(calc_row in (1:new_count)){
-              distances <- c(distances, distance_compiled(old_stations[start_row, "Latitude"], old_stations[start_row, "Longitude"], new_stations[calc_row, "Latitude"], new_stations[calc_row, "Longitude"]))
-            }
-          }
-        }
-      }
-      
-      station_by_state_and_year <- rbind(station_by_state_and_year, c(as.double(i_year), as.double(station_count), as.double(nrow(new_stations)), mean(distances), max(distances)))
-    }
-  }
-  
-  assign(dummy_df_name, station_by_state_and_year)
-}
+# upper_limit_states_df <- charging_stations_df %>% 
+#   group_by(State) %>% 
+#   summarize(count = n()) %>% 
+#   filter(count<=1500)
+# 
+# upper_limit_states <- unique(upper_limit_states_df$State)
+# 
+# for(states in upper_limit_states){
+#   dummy_df_name <- paste(states, "_analysis", sep="")
+#   station_by_state_and_year <- matrix(nrow=0, ncol=5)
+#   colnames(station_by_state_and_year) <- c("year","total_num_of_stations","new_stations_added","average_distance_mi","maximum_distance_mi")
+#   station_by_state <- charging_stations_df %>% 
+#     filter(State == states)
+#   distances <- c()
+#   year_range <- (min(year(station_by_state$Open.Date)):2023)
+#   for(i_year in year_range){
+#     station_count <- station_by_state %>% 
+#       filter(year(Open.Date)<=i_year) %>% 
+#       nrow()
+#     
+#     # Skipping iteration if there is only one station available
+#     if(station_count==1 & nrow(station_by_state_and_year)==0){
+#       station_by_state_and_year <- rbind(station_by_state_and_year, c(as.double(i_year), as.double(station_count), as.double(1), NA, NA))
+#     } else if(station_count==1){
+#       station_by_state_and_year <- rbind(station_by_state_and_year, c(as.double(i_year), as.double(station_count), as.double(0), NA, NA))
+#     } else {
+#       old_stations <- station_by_state %>% 
+#         filter(year(Open.Date)<i_year)
+#       old_count <- nrow(old_stations)
+#       
+#       new_stations <- station_by_state %>% 
+#         filter(year(Open.Date)==i_year)
+#       new_count <- nrow(new_stations)
+#       
+#       # Implementing our distance function by year, by station
+#       
+#       # If only one new station, skip the calculation loop within the new station data frame
+#       # Else (if) there are both old and new stations, calculate distances between all old stations and
+#       # all new stations as well as the distances between all new stations within the new station data frame.
+#       if(new_count==1){
+#         for(start_row in (1:old_count)){
+#             distances <- c(distances, distance_compiled(old_stations[start_row, "Latitude"], old_stations[start_row, "Longitude"], new_stations[1, "Latitude"], new_stations[1, "Longitude"]))
+#         }
+#       } else if(new_count>1){
+#         start_range <- (1:new_count-1)
+#         for(start_row in (start_range)){
+#           calc_range <- ((start_row+1):new_count)
+#           for(calc_row in (calc_range)){
+#             distances <- c(distances, distance_compiled(new_stations[start_row, "Latitude"], new_stations[start_row, "Longitude"], new_stations[calc_row, "Latitude"], new_stations[calc_row, "Longitude"]))
+#           }
+#         }
+#         # Accounting for multiple stations being added on the first year, thus having an old_count of zero
+#          if(old_count>0){ 
+#           for(start_row in (1:old_count)){
+#             for(calc_row in (1:new_count)){
+#               distances <- c(distances, distance_compiled(old_stations[start_row, "Latitude"], old_stations[start_row, "Longitude"], new_stations[calc_row, "Latitude"], new_stations[calc_row, "Longitude"]))
+#             }
+#           }
+#         }
+#       }
+#       
+#       station_by_state_and_year <- rbind(station_by_state_and_year, c(as.double(i_year), as.double(station_count), as.double(nrow(new_stations)), mean(distances), max(distances)))
+#     }
+#   }
+#   
+#   assign(dummy_df_name, station_by_state_and_year)
+# }
 
 ```
 
@@ -319,18 +317,25 @@ percent_change_distance <- c(NA, percent_change_distance)
 TX_analysis_with_registrations <- TX_analysis_with_registrations %>% 
   mutate(stations_percent_change = percent_change_stations, distance_percent_change = percent_change_distance)
 ```
+## 2016-2021: Years with EV registration data
+
+Unfortunately, the data set that details EV registrations in Texas is limited to 2016 to 2021 and is only a single data point for each year. While some analysis can be done on the data from this time period, normally I would consider this to be too small of a data set to gain real insights.
 
 ```{r Plots 1}
-percentage_line_plot <- ggplot(data=TX_analysis_with_registrations) + 
-  geom_line(mapping=aes(x=Year, y=registrations_percent_change), color="skyblue", linewidth=1.5) +
-  geom_line(mapping=aes(x=Year, y=stations_percent_change), color="yellow", linewidth=1.5) +
-  geom_line(mapping=aes(x=Year, y=distance_percent_change), color="pink", linewidth=1.5) +
-  geom_hline(mapping=aes(yintercept=0), color="black") +
-  labs(y="Percent Change") +
-  annotate(geom="richtext",x=2016.5,y=31.5,label="<b>Charging stations</b>", color="goldenrod") +
-  annotate(geom="richtext",x=2016.5,y=36,label="<b>EV registrations</b>", color="darkblue") +
-  annotate(geom="richtext",x=2016.5,y=5.5,label="<b>Average distance</b><br><b>between stations</b>", color="darkred")
-percentage_line_plot
+# Following plot was commented out because it is replaced later with a bar chart displaying the same data, and
+# this call to the TX_analysis_with_registrations data frame is altered later when I factor the Year column.
+# I wanted to still keep it in to demonstrate ggplot2 proficiency.
+
+# percentage_line_plot <- ggplot(data=TX_analysis_with_registrations) + 
+#   geom_line(mapping=aes(x=Year, y=registrations_percent_change), color="skyblue", linewidth=1.5) +
+#   geom_line(mapping=aes(x=Year, y=stations_percent_change), color="yellow", linewidth=1.5) +
+#   geom_line(mapping=aes(x=Year, y=distance_percent_change), color="pink", linewidth=1.5) +
+#   geom_hline(mapping=aes(yintercept=0), color="black") +
+#   labs(y="Percent Change") +
+#   annotate(geom="richtext",x=2016.5,y=31.5,label="<b>Charging stations</b>", color="goldenrod") +
+#   annotate(geom="richtext",x=2016.5,y=36,label="<b>EV registrations</b>", color="darkblue") +
+#   annotate(geom="richtext",x=2016.5,y=5.5,label="<b>Average distance</b><br><b>between stations</b>", color="darkred")
+# percentage_line_plot
 
 correlation_data <- TX_analysis_with_registrations %>% 
   select(!c("State","registrations_percent_change","stations_percent_change","distance_percent_change"))
@@ -341,9 +346,24 @@ correlation_data <- as.matrix(correlation_data)
 
 correlation_plot <- corrgram(correlation_data, lower.panel=panel.pts, upper.panel=panel.cor)
 ```
-
+From the correlation graph, we see strong correlations between some key metrics. Disregarding the ones that are to be expected, such as the number of new stations and the total number of stations, we can see a very strong correlation (>95%) between the number of EV registrations and time, EV registrations and the total number of stations, and, very importantly, the total number of stations and the average distance between them. We will explore these more closely next.
 
 ```{r Plots 2}
+registrations_vs_year_scatter <- ggplot(data=TX_analysis_with_registrations) +
+  geom_point(mapping=aes(x=Year, y=Electric, size=2)) +
+  labs(y="Electric vehicles")
+registrations_vs_year_scatter
+
+stations_vs_registrations_scatter <- ggplot(data=TX_analysis_with_registrations) +
+  geom_point(mapping=aes(x=Electric, y=total_num_of_stations, color=Year, size=2)) +
+  labs(x="Electric vehicles")
+stations_vs_registrations_scatter
+
+stations_vs_distance_scatter <- ggplot(data=TX_analysis_with_registrations) +
+  geom_point(mapping=aes(x=total_num_of_stations, y=average_distance_mi, color=Year, size=2)) +
+  scale_y_reverse()
+stations_vs_distance_scatter
+
 TX_analysis_with_registrations$Year <- factor(TX_analysis_with_registrations$Year)
 
 column_data <- TX_analysis_with_registrations %>% 
@@ -356,20 +376,22 @@ percentage_column_plot <- ggplot(data=column_data_long) +
   labs(y="Percent Change") +
   geom_hline(mapping=aes(yintercept=0), color="black")
 percentage_column_plot
-
-stations_vs_distance_scatter <- ggplot(data=TX_analysis_with_registrations) +
-  geom_point(mapping=aes(x=total_num_of_stations, y=average_distance_mi, color=Year, size=2))
-stations_vs_distance_scatter
-
-stations_vs_registrations_scatter <- ggplot(data=TX_analysis_with_registrations) +
-  geom_point(mapping=aes(x=total_num_of_stations, y=Electric, color=Year, size=2))
-stations_vs_registrations_scatter
-
-distance_vs_registrations_scatter <- ggplot(data=TX_analysis_with_registrations) +
-  geom_point(mapping=aes(x=Electric, y=average_distance_mi, color=Year, size=2))
-distance_vs_registrations_scatter
 ```
+Starting with the first chart, we clearly see that EV registrations are increasing over time. From this, we can infer, at the very least, that public interest is staying the same or increasing in regards to owning an electric vehicle. To get a better understanding, a follow-up step would be to calculate the market share of EVs for these years.
 
+The next chart then shows that the total number of EV charging stations is increasing to meet the demand of more EVs, almost perfectly linearly.
+
+Next, we see that in this time period, there is an inverse linear relationship between the total number of stations and the average distance between them, which is a good sign! This shows that EV range is being taken into account when new charging station locations are selected, with the ultimate goal of driving the distance between stations down.
+
+Finally, the last chart raises quite a few important questions. Focusing on the relationship between registration percent change (RPC) and station percent change (SPC), we see a larger percentage increase for EV registrations than total number of stations from 2016 to 2019, with 2019 having the lowest SPC of all the years considered. This could have had an effect on the following year's RPC, which also took a dip, but further research would be required.
+Following 2019, we see the trend flip, with SPC being higher than RPC for 2020 and 2021. This could potentially become a problem if the state becomes over saturated with charging stations and the amount of EVs does not warrant them. Something to keep an eye on in the following years.
+Now looking at the relationship between SPC and the average distance percent change (DPC), we see the same inverse relationship as we did in the scatter plot, except for 2017. I interpret this as a push to build stations in less serviced areas, farther from larger cities where a majority of stations are built. With Texas as big as it is, if stations were built into smaller communities, it would inevitably drive the average distance up. Looking at the geographical data on the Tableau visualization, this seems to be exactly the case. Multiple stations are constructed along highways where there previously weren't any stations, as well as in more remote areas of Texas. More research could be done on state EV initiatives in 2016 and 2017 to get a better understanding of the circumstances that led to this increase in average distance.
+
+I don't believe we will get access to EV registration data in Texas prior to 2016, at least from the source I initially used. However, as time goes on, we will gain access to more years of data. As a matter of fact, at the time of this edit, data for 2022 is available on the website! I am not including it mainly because I did not plan for this project to be updated ad infinitum.
+
+## 2011-2023: The full data set
+
+For this section, EV registrations in Texas will be omitted and the focus will be on the station data. The data set includes stations from 2009 to 2023, however, in the final code chunk of this section, I omit the years 2009 and 2010 from the statistical analysis due to there being only two stations in the entire state during those years. The SPC in 2011 would have been 3,000%, and I did not want that to skew the graphical results.
 
 
 ```{r Plots 3}
@@ -395,14 +417,22 @@ TX_analysis <- TX_analysis %>%
   mutate(total_stations_percent_change=percent_change_total_stations, new_stations_percent_change=percent_change_new_stations, average_distance_percent_change=percent_change_distance)
 
 distance_corrgram <- corrgram(select(TX_analysis, "year":"maximum_distance_mi"), lower.panel=panel.cor, upper.panel=panel.pts)
+```
+
+Looking at our correlation graph for the full station data set, we see generally weaker correlations between the same variables than we saw in the 2016-2021. We will focus on the number of stations over time and the number of stations and average distance.
+
+```{r Plots 4}
+total_stations_vs_time <- ggplot(data=TX_analysis) +
+  geom_point(mapping=aes(x=year, y=total_num_of_stations))
+total_stations_vs_time
 
 avg_distance_vs_time <- ggplot(data=TX_analysis) +
   geom_point(mapping=aes(x=year, y=average_distance_mi))
 avg_distance_vs_time
 
-total_stations_vs_time <- ggplot(data=TX_analysis) +
-  geom_point(mapping=aes(x=year, y=total_num_of_stations))
-total_stations_vs_time
+avg_distance_vs_total_stations <- ggplot(data=TX_analysis) +
+  geom_point(mapping=aes(x=total_num_of_stations, y=average_distance_mi))
+avg_distance_vs_total_stations
 
 column_data <- TX_analysis %>% 
   select("year", "total_stations_percent_change","average_distance_percent_change") %>% 
@@ -418,6 +448,11 @@ distance_percentages_column <- ggplot(column_data_long) +
   geom_hline(yintercept=0, color="black")
 distance_percentages_column
 ```
+Looking at our first graph, we see the growth of total number of stations over time (with SPC on detailed on the final graph). One interesting thing to note, the final data point suggest a flattening of the curve, which could indicate that we are reaching a point where we add fewer stations each successive year. As time goes on, the solution to charging station access will be less about the *number* of stations and more about how *spread out* they are. Which leads us to our next graph.
+
+While the year itself doesn't actually influence the average distance, viewing the relationship is still valuable. We do see a downward trend for the average distance between stations as time goes on. I believe this should be the metric that is the main focus when selecting locations for new charging stations.
+
+Looking at our final two graphs, there is one thing I wanted to point out. The last two years of data, we see little change to the average distance between stations, which can be interpreted as the new stations being built very close in proximity to previously built stations, Which seems counter intuitive and not very productive. However, stated at the beginning of this project, I considered all charging stations equal in terms of charging ports offered, but this is not the case. EVs have a variety of fast charging connections and not all connections are supported at every station. Another explanation is the specific company that builds and maintains the specific charging stations. Companies have every incentive to build stations in high volume areas where they previously did not have a station, regardless of if this keeps the state's average distance between stations down.
 
 ```{r Export to Tableau 1}
 # for(i_year in (2011:2023)){
@@ -450,4 +485,14 @@ distance_percentages_column
 ```
 
 The above code chunk was made to be able to differentiate between which distance calculations had been added by new stations per year. This was so when I transferred to Tableau, I could make a color coded histogram for distances. This took two days to compute! I was very surprised. I considered changing the `old_or_new` column to a boolean in the hopes that it would take less memory to store/update, but I was already a day into running the chunk and decided to just wait for my results. This code has been commented out so it won't run on upload to Github.
+
+And don't forget to check out the companion Tableau visualization I made for this project! It includes geological locations over a map of Texas that distinguishes the year each station was made available as well as a histogram of the distance calculations made in these scripts.
+
+https://public.tableau.com/app/profile/torin.rose/viz/TexasElectricVehicleChargingStationDistanceAnalysis/ElectricVehicleChargingStationsTexas
+
+# Final thoughts
+
+If you made it this far, thank you for taking the time to review my project! I am publishing this as a webpage through Github in my efforts to start my career in data analytics. When I started this project, I quickly realized that I had undertaken a much bigger task than I initially thought, and if I had all of the time in the world, I would like to continue the analysis for Texas and perhaps for other states as well.
+
+For any questions, comments, or concerns, feel free to contact me at torinrose1@gmail.com
 
